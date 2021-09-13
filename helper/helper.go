@@ -7,13 +7,13 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"syscall"
-	"path/filepath"
 
 	"golang.org/x/sys/unix"
 
@@ -103,6 +103,7 @@ func InitializeGlobals() {
 	content = flag.Int("content", -2, "Content ID of the corresponding segment")
 	compressionLevel = flag.Int("compression-level", 0, "The level of compression. O indicates no compression. Range of valid values depends on compression type")
 	compressionType = flag.String("compression-type", "gzip", "The type of compression. Valid values are 'gzip', 'zstd'")
+	// This must be made to take multiple files then we can load multiple files.
 	dataFile = flag.String("data-file", "", "Absolute path to the data file")
 	oidFile = flag.String("oid-file", "", "Absolute path to the file containing a list of oids to restore")
 	onErrorContinue = flag.Bool("on-error-continue", false, "Continue restore even when encountering an error")
@@ -110,6 +111,7 @@ func InitializeGlobals() {
 	pluginConfigFile = flag.String("plugin-config", "", "The configuration file to use for a plugin")
 	printVersion = flag.Bool("version", false, "Print version number and exit")
 	restoreAgent = flag.Bool("restore-agent", false, "Use gpbackup_helper as an agent for restore")
+	// Must also send multiple toc files
 	tocFile = flag.String("toc-file", "", "Absolute path to the table of contents file")
 	isFiltered = flag.Bool("with-filters", false, "Used with table/schema filters")
 

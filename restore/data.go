@@ -63,6 +63,7 @@ func restoreSingleTableData(fpInfo *filepath.FilePathInfo, entry toc.MasterDataE
 	} else {
 		destinationToRead = fpInfo.GetTableBackupFilePathForCopyCommand(entry.Oid, utils.GetPipeThroughProgram().Extension, backupConfig.SingleDataFile)
 	}
+	// Additional CopyTableIn need to be called in order to load more data into the segment.
 	numRowsRestored, err := CopyTableIn(connectionPool, tableName, entry.AttributeString, destinationToRead, backupConfig.SingleDataFile, whichConn)
 	if err != nil {
 		return err
@@ -108,6 +109,7 @@ func restoreDataFromTimestamp(fpInfo filepath.FilePathInfo, dataEntries []toc.Ma
 		if len(opts.IncludedRelations) > 0 || len(opts.ExcludedRelations) > 0 || len(opts.IncludedSchemas) > 0 || len(opts.ExcludedSchemas) > 0 {
 			isFilter = true
 		}
+		// We need to tell the restore agents if they are acting as agents for multiple segments
 		utils.StartGpbackupHelpers(globalCluster, fpInfo, "--restore-agent", MustGetFlagString(options.PLUGIN_CONFIG), "", MustGetFlagBool(options.ON_ERROR_CONTINUE), isFilter, &wasTerminated)
 	}
 	/*

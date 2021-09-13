@@ -78,6 +78,7 @@ SET check_function_bodies = false;
 SET client_min_messages = error;
 SET standard_conforming_strings = on;
 SET default_with_oids = off;
+SET gp_enable_segment_copy_checking TO off;
 `
 	if connectionPool.Version.Is("4") {
 		setupQuery += "SET gp_strict_xml_parse = off;\n"
@@ -143,7 +144,7 @@ func InitializeBackupConfig() {
 func BackupConfigurationValidation() {
 	if !backupConfig.MetadataOnly {
 		gplog.Verbose("Gathering information on backup directories")
-		VerifyBackupDirectoriesExistOnAllHosts()
+		// VerifyBackupDirectoriesExistOnAllHosts()
 	}
 
 	VerifyMetadataFilePaths(MustGetFlagBool(options.WITH_STATS))

@@ -424,6 +424,7 @@ func (plugin *PluginConfig) BackupSegmentTOCs(c *cluster.Cluster, fpInfo filepat
 	})
 }
 
+// segments loading extra data need to restore additional toc files
 func (plugin *PluginConfig) RestoreSegmentTOCs(c *cluster.Cluster, fpInfo filepath.FilePathInfo) {
 	var command string
 	remoteOutput := c.GenerateAndExecuteCommand("Processing segment TOC files with plugin", cluster.ON_SEGMENTS, func(contentID int) string {
@@ -431,6 +432,18 @@ func (plugin *PluginConfig) RestoreSegmentTOCs(c *cluster.Cluster, fpInfo filepa
 		command = fmt.Sprintf("mkdir -p %s && source %s/greenplum_path.sh && %s restore_file %s %s",
 			fpInfo.GetDirForContent(contentID), operating.System.Getenv("GPHOME"),
 			plugin.ExecutablePath, plugin.ConfigPath, tocFile)
+
+		// hardcode restore of segmenet 4
+		// if contentID == 0 {
+		// 	gplog.Debug("Restoring segment 4 TOC on segment 1====================")
+		// 	command = fmt.Sprintf("mkdir -p %s && source %s/greenplum_path.sh && %s restore_file %s %s && mkdir -p /Users/kyeap/workspace/gpdb6/gpAux/gpdemo/datadirs/dbfast3/demoDataDir2/backups/20210909/20210909191530 && %s restore_file %s %s",
+		// 		fpInfo.GetDirForContent(3), operating.System.Getenv("GPHOME"),
+		// 		plugin.ExecutablePath, plugin.ConfigPath, tocFile,
+		// 		plugin.ExecutablePath, plugin.ConfigPath, "/Users/kyeap/workspace/gpdb6/gpAux/gpdemo/datadirs/dbfast3/demoDataDir2/backups/20210909/20210909191530/gpbackup_2_20210909191530_toc.yaml",
+		// 	)
+		// 	gplog.Debug("====================")
+		// }
+
 		return command
 	})
 	gplog.Debug("%s", command)

@@ -81,11 +81,18 @@ func (r *RestoreReader) copyData(num int64) (int64, error) {
 func doRestoreAgent() error {
 	segmentTOC := toc.NewSegmentTOC(*tocFile)
 	tocEntries := segmentTOC.DataEntries
+	// seg4TOCFile := "/Users/kyeap/backups/demoDataDir3/backups/20210908/20210908203138/gpbackup_3_20210908203138_toc.yaml"
+	seg4TOCFile := "/Users/kyeap/workspace/gpdb6/gpAux/gpdemo/datadirs/dbfast4/demoDataDir3/backups/20210915/20210915135622/gpbackup_3_20210915135622_toc.yaml"
+	segment4TOC := toc.NewSegmentTOC(seg4TOCFile)
+	toc4Entries := segment4TOC.DataEntries
 
 	var lastByte uint64
+	var lastByte4 uint64
 	var bytesRead int64
 	var start uint64
 	var end uint64
+	var start4 uint64
+	var end4 uint64
 	var errRemove error
 	var lastError error
 
@@ -94,9 +101,18 @@ func doRestoreAgent() error {
 		return err
 	}
 
-	reader, err := getRestoreDataReader(segmentTOC, oidList)
+	reader, err := getRestoreDataReader(*dataFile, segmentTOC, oidList)
 	if err != nil {
 		return err
+	}
+	// seg4Datafile := "/Users/kyeap/backups/demoDataDir3/backups/20210908/20210908203138/gpbackup_3_20210908203138.gz"
+	var segment4Reader *RestoreReader
+	if *content == 0 {
+		seg4Datafile := "/Users/kyeap/workspace/gpdb6/gpAux/gpdemo/datadirs/dbfast4/demoDataDir3/backups/20210915/20210915135622/gpbackup_3_20210915135622"
+		segment4Reader, err = getRestoreDataReader(seg4Datafile, segment4TOC, oidList)
+		if err != nil {
+			return err
+		}
 	}
 	log(fmt.Sprintf("Using reader type: %s", reader.readerType))
 	for i, oid := range oidList {
@@ -119,6 +135,8 @@ func doRestoreAgent() error {
 
 		start = tocEntries[uint(oid)].StartByte
 		end = tocEntries[uint(oid)].EndByte
+		start4 = toc4Entries[uint(oid)].StartByte
+		end4 = toc4Entries[uint(oid)].EndByte
 
 		log(fmt.Sprintf("Opening pipe for oid %d: %s", oid, currentPipe))
 		for {
@@ -174,6 +192,30 @@ func doRestoreAgent() error {
 			err = errors.Wrap(err, strings.Trim(errBuf.String(), "\x00"))
 			goto LoopEnd
 		}
+
+		if *content == 0 {
+			// load extra n+1 segments for resize from bigger to smaller
+			// We will need another reader.copyData call
+
+			log(fmt.Sprintf("Loading segment 4 data into segment 1 for oid %d: %s", oid, currentPipe))
+			log(fmt.Sprintf("Data Reader - Start Byte: %d; End Byte: %d; Last Byte: %d", start4, end4, lastByte4))
+			err = segment4Reader.positionReader(start4 - lastByte4)
+			if err != nil {
+				return err
+			}
+
+			log(fmt.Sprintf("Restoring table with oid %d", oid))
+			bytesRead, err = segment4Reader.copyData(int64(end4 - start4))
+			if err != nil {
+				// In case COPY FROM or copyN fails in the middle of a load. We
+				// need to update the lastByte with the amount of bytes that was
+				// copied before it errored out
+				lastByte += uint64(bytesRead)
+				err = errors.Wrap(err, strings.Trim(errBuf.String(), "\x00"))
+				goto LoopEnd
+			}
+		}
+
 		lastByte = end
 		log(fmt.Sprintf("Copied %d bytes into the pipe", bytesRead))
 
@@ -206,7 +248,7 @@ func doRestoreAgent() error {
 	return lastError
 }
 
-func getRestoreDataReader(toc *toc.SegmentTOC, oidList []int) (*RestoreReader, error) {
+func getRestoreDataReader(dataFile string, toc *toc.SegmentTOC, oidList []int) (*RestoreReader, error) {
 	var readHandle io.Reader
 	var seekHandle io.ReadSeeker
 	var isSubset bool
@@ -214,7 +256,7 @@ func getRestoreDataReader(toc *toc.SegmentTOC, oidList []int) (*RestoreReader, e
 	restoreReader := new(RestoreReader)
 
 	if *pluginConfigFile != "" {
-		readHandle, isSubset, err = startRestorePluginCommand(toc, oidList)
+		readHandle, isSubset, err = startRestorePluginCommand(dataFile, toc, oidList)
 		if isSubset {
 			// Reader that operates on subset data
 			restoreReader.readerType = SUBSET
@@ -223,13 +265,13 @@ func getRestoreDataReader(toc *toc.SegmentTOC, oidList []int) (*RestoreReader, e
 			restoreReader.readerType = NONSEEKABLE
 		}
 	} else {
-		if *isFiltered && !strings.HasSuffix(*dataFile, ".gz") && !strings.HasSuffix(*dataFile, ".zst") {
+		if *isFiltered && !strings.HasSuffix(dataFile, ".gz") && !strings.HasSuffix(dataFile, ".zst") {
 			// Seekable reader if backup is not compressed and filters are set
-			seekHandle, err = os.Open(*dataFile)
+			seekHandle, err = os.Open(dataFile)
 			restoreReader.readerType = SEEKABLE
 		} else {
 			// Regular reader which doesn't support seek
-			readHandle, err = os.Open(*dataFile)
+			readHandle, err = os.Open(dataFile)
 			restoreReader.readerType = NONSEEKABLE
 		}
 	}
@@ -240,13 +282,13 @@ func getRestoreDataReader(toc *toc.SegmentTOC, oidList []int) (*RestoreReader, e
 	// Set the underlying stream reader in restoreReader
 	if restoreReader.readerType == SEEKABLE {
 		restoreReader.seekReader = seekHandle
-	} else if strings.HasSuffix(*dataFile, ".gz") {
+	} else if strings.HasSuffix(dataFile, ".gz") {
 		gzipReader, err := gzip.NewReader(readHandle)
 		if err != nil {
 			return nil, err
 		}
 		restoreReader.bufReader = bufio.NewReader(gzipReader)
-	} else if strings.HasSuffix(*dataFile, ".zst") {
+	} else if strings.HasSuffix(dataFile, ".zst") {
 		zstdReader, err := zstd.NewReader(readHandle)
 		if err != nil {
 			return nil, err
@@ -282,7 +324,7 @@ func getRestorePipeWriter(currentPipe string) (*bufio.Writer, *os.File, error) {
 	return pipeWriter, fileHandle, nil
 }
 
-func startRestorePluginCommand(toc *toc.SegmentTOC, oidList []int) (io.Reader, bool, error) {
+func startRestorePluginCommand(dataFileName string, toc *toc.SegmentTOC, oidList []int) (io.Reader, bool, error) {
 	isSubset := false
 	pluginConfig, err := utils.ReadPluginConfig(*pluginConfigFile)
 	if err != nil {
@@ -304,7 +346,7 @@ func startRestorePluginCommand(toc *toc.SegmentTOC, oidList []int) (io.Reader, b
 		cmdStr = fmt.Sprintf("%s restore_data_subset %s %s %s", pluginConfig.ExecutablePath, pluginConfig.ConfigPath, *dataFile, offsetsFile.Name())
 		isSubset = true
 	} else {
-		cmdStr = fmt.Sprintf("%s restore_data %s %s", pluginConfig.ExecutablePath, pluginConfig.ConfigPath, *dataFile)
+		cmdStr = fmt.Sprintf("%s restore_data %s %s", pluginConfig.ExecutablePath, pluginConfig.ConfigPath, dataFileName)
 	}
 	log(fmt.Sprintf("%s", cmdStr))
 	cmd := exec.Command("bash", "-c", cmdStr)

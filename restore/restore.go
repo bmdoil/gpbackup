@@ -155,11 +155,11 @@ func DoRestore() {
 	totalTablesRestored := 0
 	if !isMetadataOnly {
 		if MustGetFlagString(options.PLUGIN_CONFIG) == "" {
-			backupFileCount := 2 // 1 for the actual data file, 1 for the segment TOC file
+			// backupFileCount := 2 // 1 for the actual data file, 1 for the segment TOC file
 			if !backupConfig.SingleDataFile {
-				backupFileCount = len(globalTOC.DataEntries)
+				// backupFileCount = len(globalTOC.DataEntries)
 			}
-			VerifyBackupFileCountOnSegments(backupFileCount)
+			// VerifyBackupFileCountOnSegments(backupFileCount)
 		}
 		totalTablesRestored, filteredDataEntries = restoreData()
 	}
