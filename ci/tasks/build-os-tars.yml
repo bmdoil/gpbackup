@@ -6,7 +6,6 @@ image_resource:
 inputs:
 - name: gpbackup
 - name: gpbackup-go-components
-- name: ddboost_components
 - name: gpbackup-release-license
 
 outputs:
