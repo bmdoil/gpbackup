@@ -6,9 +6,11 @@ package backup
 
 import (
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/greenplum-db/gp-common-go-libs/dbconn"
 	"github.com/greenplum-db/gp-common-go-libs/gplog"
@@ -55,17 +57,20 @@ type BackupProgressCounters struct {
 	ProgressBar    utils.ProgressBar
 }
 
+var execTime time.Duration
+
 func CopyTableOut(connectionPool *dbconn.DBConn, table Table, destinationToWrite string, connNum int) (int64, error) {
 	checkPipeExistsCommand := ""
 	customPipeThroughCommand := utils.GetPipeThroughProgram().OutputCommand
 	sendToDestinationCommand := ">"
 	if MustGetFlagBool(options.SINGLE_DATA_FILE) {
 		/*
-		 * The segment TOC files are always written to the segment data directory for
-		 * performance reasons, in case the user-specified directory is on a mounted
-		 * drive.  It will be copied to a user-specified directory, if any, once all
-		 * of the data is backed up.
-		 */
+				 * The segment TOC files are always written to the segment data directory for
+				 * performance reasons, in case the user-specified directory is on a mounted
+				 * drive.  It will be copied to a user-specified directory, if any, once all
+			backupStart := time.Now()
+				 * of the data is backed up.
+		*/
 		checkPipeExistsCommand = fmt.Sprintf("(test -p \"%s\" || (echo \"Pipe not found %s\">&2; exit 1)) && ", destinationToWrite, destinationToWrite)
 		customPipeThroughCommand = "cat -"
 	} else if MustGetFlagString(options.PLUGIN_CONFIG) != "" {
@@ -76,13 +81,17 @@ func CopyTableOut(connectionPool *dbconn.DBConn, table Table, destinationToWrite
 
 	query := fmt.Sprintf("COPY %s TO %s WITH CSV DELIMITER '%s' ON SEGMENT IGNORE EXTERNAL PARTITIONS;", table.FQN(), copyCommand, tableDelim)
 	gplog.Verbose("Worker %d: %s", connNum, query)
+	execStart := time.Now()
 	result, err := connectionPool.Exec(query, connNum)
+	execTime += time.Since(execStart)
 	if err != nil {
 		return 0, err
 	}
 	numRows, _ := result.RowsAffected()
 	return numRows, nil
 }
+
+var copyTime time.Duration
 
 func BackupSingleTableData(table Table, rowsCopiedMap map[uint32]int64, counters *BackupProgressCounters, whichConn int) error {
 	atomic.AddInt64(&counters.NumRegTables, 1)
@@ -96,11 +105,17 @@ func BackupSingleTableData(table Table, rowsCopiedMap map[uint32]int64, counters
 
 	destinationToWrite := ""
 	if MustGetFlagBool(options.SINGLE_DATA_FILE) {
+		// destinationToWrite = globalFPInfo.GetSegmentPipePathForCopyCommand()
 		destinationToWrite = fmt.Sprintf("%s_%d", globalFPInfo.GetSegmentPipePathForCopyCommand(), table.Oid)
 	} else {
 		destinationToWrite = globalFPInfo.GetTableBackupFilePathForCopyCommand(table.Oid, utils.GetPipeThroughProgram().Extension, false)
 	}
+
+	copyStart := time.Now()
 	rowsCopied, err := CopyTableOut(connectionPool, table, destinationToWrite, whichConn)
+	//
+	copyTime += time.Since(copyStart)
+
 	if err != nil {
 		return err
 	}
@@ -109,7 +124,14 @@ func BackupSingleTableData(table Table, rowsCopiedMap map[uint32]int64, counters
 	return nil
 }
 
+func timeTrack(start time.Time, name string) {
+	elapsed := time.Since(start)
+	log.Printf("%s took %s\n", name, elapsed)
+}
+
 func backupDataForAllTables(tables []Table) []map[uint32]int64 {
+	defer timeTrack(time.Now(), "backupDataForAllTables")
+	var tableTime time.Duration
 	var numExtOrForeignTables int64
 	for _, table := range tables {
 		if table.SkipDataBackup() {
@@ -183,7 +205,10 @@ func backupDataForAllTables(tables []Table) []map[uint32]int64 {
 					}
 				}
 
+				tableStart := time.Now()
 				err := BackupSingleTableData(table, rowsCopiedMaps[whichConn], &counters, whichConn)
+				tableTime += time.Since(tableStart)
+
 				if err != nil {
 					copyErr = err
 				}
@@ -226,6 +251,8 @@ func backupDataForAllTables(tables []Table) []map[uint32]int64 {
 
 	counters.ProgressBar.Finish()
 	printDataBackupWarnings(numExtOrForeignTables)
+	fmt.Println("table", tableTime)
+	fmt.Println("copy", copyTime)
 	return rowsCopiedMaps
 }
 

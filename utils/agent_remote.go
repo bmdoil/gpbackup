@@ -32,6 +32,7 @@ func CreateFirstSegmentPipeOnAllHosts(oid string, c *cluster.Cluster, fpInfo fil
 	remoteOutput := c.GenerateAndExecuteCommand("Creating segment data pipes", cluster.ON_SEGMENTS, func(contentID int) string {
 		pipeName := fpInfo.GetSegmentPipeFilePath(contentID)
 		pipeName = fmt.Sprintf("%s_%s", pipeName, oid)
+		// pipeName = fmt.Sprintf("%s", pipeName)
 		return fmt.Sprintf("mkfifo %s", pipeName)
 	})
 	c.CheckClusterError(remoteOutput, "Unable to create segment data pipes", func(contentID int) string {

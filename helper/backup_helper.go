@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/greenplum-db/gpbackup/toc"
 	"github.com/greenplum-db/gpbackup/utils"
@@ -17,7 +18,25 @@ import (
  * Backup specific functions
  */
 
+// timeStart := time.Now()
+// execTime += time.Since(execStart)
+// func timeTrack(start time.Time, name string) {
+// 	elapsed := time.Since(start)
+// 	log.Printf("%s took %s\n", name, elapsed)
+// }
+
+// defer timeTrack(time.Now(), "backupDataForAllTables")
+
+var loopFrontTime time.Duration
+var loopBackTime time.Duration
+var ioCopyTime time.Duration
+
+var aTime time.Duration
+var bTime time.Duration
+var channelBlockTime time.Duration
+
 func doBackupAgent() error {
+	timeStart := time.Now()
 	var lastRead uint64
 	var (
 		pipeWriter BackupPipeWriterCloser
@@ -30,58 +49,122 @@ func doBackupAgent() error {
 	if err != nil {
 		return err
 	}
-
-	currentPipe = fmt.Sprintf("%s_%d", *pipeFile, oidList[0])
 	/*
 	 * It is important that we create the reader before creating the writer
 	 * so that we establish a connection to the first pipe (created by gpbackup)
 	 * and properly clean it up if an error occurs while creating the writer.
 	 */
+	readerSlice := make([]io.Reader, len(oidList))
+	readHandleSlice := make([]io.ReadCloser, len(oidList))
+	channelSlice := make([]chan bool, len(oidList))
+	for i, _ := range oidList {
+		c := make(chan bool)
+		channelSlice[i] = c
+	}
+	go func() {
+		reader, readHandle, err := getBackupPipeReader(fmt.Sprintf("%s_%d", *pipeFile, oidList[0]))
+		if err != nil {
+			// return err
+			panic("1=====================")
+		}
+		readerSlice[0] = reader
+		readHandleSlice[0] = readHandle
+		channelSlice[0] <- true
+
+		for i, oid := range oidList[1:] {
+			go func(i int, oid int) {
+				// loopFrontStart := time.Now() //======================================================
+				// aStart := time.Now()
+
+				pipe := fmt.Sprintf("%s_%d", *pipeFile, oid)
+				// log(fmt.Sprintf("Creating pipe %s\n", pipe))
+				err := createPipe(pipe)
+				if err != nil {
+					// return err
+					panic("2================")
+				}
+				reader, readHandle, err := getBackupPipeReader(pipe)
+				if err != nil {
+					// return err
+					panic("3===============================")
+				}
+				readerSlice[i+1] = reader
+				readHandleSlice[i+1] = readHandle
+				channelSlice[i+1] <- true
+
+				// aTime += time.Since(aStart)
+			}(i, oid)
+		}
+	}()
+
+	pipeWriter, writeCmd, err = getBackupPipeWriter()
+	if err != nil {
+		return err
+	}
 	for i, oid := range oidList {
+
 		if wasTerminated {
 			return errors.New("Terminated due to user request")
 		}
-		if i < len(oidList)-1 {
-			log(fmt.Sprintf("Creating pipe for oid %d\n", oidList[i+1]))
-			nextPipe = fmt.Sprintf("%s_%d", *pipeFile, oidList[i+1])
-			err := createPipe(nextPipe)
-			if err != nil {
-				return err
-			}
-		}
+		// if i < len(oidList)-1 {
+		// 	log(fmt.Sprintf("Creating pipe for oid %d\n", oidList[i+1]))
+		// 	go func() {
+		// 		nextPipe = fmt.Sprintf("%s_%d", *pipeFile, oidList[i+1])
+		// 		err := createPipe(nextPipe)
+		// 		if err != nil {
+		// 			return err
+		// 		}
+		// 	}()
+		// }
 
-		log(fmt.Sprintf("Opening pipe for oid %d\n", oid))
-		reader, readHandle, err := getBackupPipeReader(currentPipe)
-		if err != nil {
-			return err
-		}
-		if i == 0 {
-			pipeWriter, writeCmd, err = getBackupPipeWriter()
-			if err != nil {
-				return err
-			}
-		}
+		// bStart := time.Now()
 
-		log(fmt.Sprintf("Backing up table with oid %d\n", oid))
-		numBytes, err := io.Copy(pipeWriter, reader)
+		// bTime += time.Since(bStart)
+
+		// log(fmt.Sprintf("Opening pipe for oid %d\n", oid))
+		channelStart := time.Now()
+
+		<-channelSlice[i] // block until pipe is open
+
+		timeBlocked := time.Since(channelStart)
+		log(fmt.Sprintf("time spent blocked on table %d: %v", i, timeBlocked))
+		channelBlockTime += timeBlocked
+		// log(fmt.Sprintf("ReadHandleSlice %v", readHandleSlice[i]))
+
+		// log(fmt.Sprintf("Backing up table with oid %d\n", oid))
+
+		// loopFrontTime += time.Since(loopFrontStart) // =================================================================================
+		ioCopyStart := time.Now()
+
+		numBytes, err := io.Copy(pipeWriter, readerSlice[i])
 		if err != nil {
 			return errors.Wrap(err, strings.Trim(errBuf.String(), "\x00"))
 		}
-		log(fmt.Sprintf("Read %d bytes\n", numBytes))
+
+		ioCopyTime += time.Since(ioCopyStart)
+		loopBackStart := time.Now()
+
+		// log(fmt.Sprintf("Read %d bytes\n", numBytes))
 
 		lastProcessed := lastRead + uint64(numBytes)
 		tocfile.AddSegmentDataEntry(uint(oid), lastRead, lastProcessed)
 		lastRead = lastProcessed
 
-		lastPipe = currentPipe
-		currentPipe = nextPipe
-		_ = readHandle.Close()
-		err = utils.RemoveFileIfExists(lastPipe)
+		// lastPipe = currentPipe
+		// currentPipe = nextPipe
+		// err = utils.RemoveFileIfExists(lastPipe)
+		// if err != nil {
+		// 	return err
+		// }
+		_ = readHandleSlice[i].Close()
+		err = utils.RemoveFileIfExists(fmt.Sprintf("%s_%d", *pipeFile, oidList[i]))
 		if err != nil {
 			return err
 		}
+		loopBackTime += time.Since(loopBackStart)
 	}
 
+	endStart := time.Now()
 	_ = pipeWriter.Close()
 	if *pluginConfigFile != "" {
 		/*
@@ -102,18 +185,41 @@ func doBackupAgent() error {
 		return err
 	}
 	log("Finished writing segment TOC")
+	helperEndTime := time.Since(endStart)
+
+	log(fmt.Sprintf("loopFrontTime %v", loopFrontTime))
+	// log(fmt.Sprintf("loop aTime %v", aTime))
+	// log(fmt.Sprintf("loop bTime %v", bTime))
+	log(fmt.Sprintf("loop aaTime %v", aaTime))
+	log(fmt.Sprintf("loop bbTime %v", bbTime))
+	log(fmt.Sprintf("loop channelBlockTime %v", channelBlockTime))
+	log(fmt.Sprintf("ioCopyTime %v", ioCopyTime))
+	// log(fmt.Sprintf("loopBackTime %v", loopBackTime))
+	log(fmt.Sprintf("helperEndTime %v", helperEndTime))
+	log(fmt.Sprintf("doBackupagent %v", time.Since(timeStart)))
+
 	return nil
 }
 
+var aaTime time.Duration
+var bbTime time.Duration
+
 func getBackupPipeReader(currentPipe string) (io.Reader, io.ReadCloser, error) {
+	aaStart := time.Now()
+
 	readHandle, err := os.OpenFile(currentPipe, os.O_RDONLY, os.ModeNamedPipe)
 	if err != nil {
 		return nil, nil, err
 	}
+
+	aaTime += time.Since(aaStart)
+	bbStart := time.Now()
+
 	// This is a workaround for https://github.com/golang/go/issues/24164.
 	// Once this bug is fixed, the call to Fd() can be removed
-	readHandle.Fd()
+	// readHandle.Fd()
 	reader := bufio.NewReader(readHandle)
+	bbTime += time.Since(bbStart)
 	return reader, readHandle, nil
 }
 
