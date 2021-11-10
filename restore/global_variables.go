@@ -92,7 +92,22 @@ func SetTOC(toc *toc.TOC) {
 	globalTOC = toc
 }
 
+func MinInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 // Util functions to enable ease of access to global flag values
+
+func GetConnNums() int {
+	return connectionPool.NumConns
+}
+
+func FlagChanged(flagName string) bool {
+	return cmdFlags.Changed(flagName)
+}
 
 func MustGetFlagString(flagName string) string {
 	return options.MustGetFlagString(cmdFlags, flagName)

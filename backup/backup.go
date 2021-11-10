@@ -259,7 +259,6 @@ func backupData(tables []Table) {
 		gplog.Info("Data backup complete")
 		return
 	}
-
 	if MustGetFlagBool(options.SINGLE_DATA_FILE) {
 		gplog.Verbose("Initializing pipes and gpbackup_helper on segments for single data file backup")
 		utils.VerifyHelperVersionOnSegments(version, globalCluster)
@@ -269,18 +268,28 @@ func backupData(tables []Table) {
 				oidList = append(oidList, fmt.Sprintf("%d", table.Oid))
 			}
 		}
+
 		utils.WriteOidListToSegments(oidList, globalCluster, globalFPInfo)
-		utils.CreateFirstSegmentPipeOnAllHosts(oidList[0], globalCluster, globalFPInfo)
-		compressStr := fmt.Sprintf(" --compression-level %d --compression-type %s", MustGetFlagInt(options.COMPRESSION_LEVEL), MustGetFlagString(options.COMPRESSION_TYPE))
+		compressStr := fmt.Sprintf(" --compression-level %d", MustGetFlagInt(options.COMPRESSION_LEVEL))
+
 		if MustGetFlagBool(options.NO_COMPRESSION) {
 			compressStr = " --compression-level 0"
 		}
+
+		initialPipes := CreateInitialSegmentPipes(oidList, globalCluster, globalFPInfo)
+
 		// Do not pass through the --on-error-continue flag because it does not apply to gpbackup
 		utils.StartGpbackupHelpers(globalCluster, globalFPInfo, "--backup-agent",
-			MustGetFlagString(options.PLUGIN_CONFIG), compressStr, false, false, &wasTerminated)
+			MustGetFlagString(options.PLUGIN_CONFIG), compressStr, false, false, &wasTerminated, initialPipes)
 	}
 	gplog.Info("Writing data to file")
-	rowsCopiedMaps := backupDataForAllTables(tables)
+	var rowsCopiedMaps []map[uint32]int64
+	if FlagChanged(options.SINGLE_DATA_FILE_COPY_PREFETCH) {
+		rowsCopiedMaps = backupDataForAllTablesPrefetch(tables)
+	} else {
+		rowsCopiedMaps = backupDataForAllTables(tables)
+	}
+
 	AddTableDataEntriesToTOC(tables, rowsCopiedMaps)
 	if MustGetFlagBool(options.SINGLE_DATA_FILE) && MustGetFlagString(options.PLUGIN_CONFIG) != "" {
 		pluginConfig.BackupSegmentTOCs(globalCluster, globalFPInfo)
@@ -500,4 +509,12 @@ func logCompletionMessage(msg string) {
 	} else {
 		gplog.Info("%s complete", msg)
 	}
+}
+
+func CreateInitialSegmentPipes(oidList []string, c *cluster.Cluster, fpInfo filepath.FilePathInfo) int {
+	maxPipes := MinInt(GetConnNums(), len(oidList))
+	for i := 0; i < maxPipes; i++ {
+		utils.CreateSegmentPipeOnAllHosts(oidList[i], c, fpInfo)
+	}
+	return maxPipes
 }

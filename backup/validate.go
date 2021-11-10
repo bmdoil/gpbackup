@@ -102,6 +102,9 @@ func validateFlagCombinations(flags *pflag.FlagSet) {
 	options.CheckExclusiveFlags(flags, options.NO_COMPRESSION, options.COMPRESSION_TYPE)
 	options.CheckExclusiveFlags(flags, options.NO_COMPRESSION, options.COMPRESSION_LEVEL)
 	options.CheckExclusiveFlags(flags, options.PLUGIN_CONFIG, options.BACKUP_DIR)
+	if flags.Changed(options.SINGLE_DATA_FILE_COPY_PREFETCH) && !MustGetFlagBool(options.SINGLE_DATA_FILE) {
+		gplog.Fatal(errors.Errorf("--single-data-file-copy-prefetch must be specified with --single-data-file"), "")
+	}
 	if MustGetFlagString(options.FROM_TIMESTAMP) != "" && !MustGetFlagBool(options.INCREMENTAL) {
 		gplog.Fatal(errors.Errorf("--from-timestamp must be specified with --incremental"), "")
 	}
@@ -120,6 +123,13 @@ func validateFlagValues() {
 	if MustGetFlagString(options.FROM_TIMESTAMP) != "" && !filepath.IsValidTimestamp(MustGetFlagString(options.FROM_TIMESTAMP)) {
 		gplog.Fatal(errors.Errorf("Timestamp %s is invalid.  Timestamps must be in the format YYYYMMDDHHMMSS.",
 			MustGetFlagString(options.FROM_TIMESTAMP)), "")
+	}
+	if MustGetFlagInt(options.SINGLE_DATA_FILE_COPY_PREFETCH) < 1 {
+		gplog.Fatal(errors.Errorf("--single-data-file-copy-prefetch %d is invalid. Must be at least 1",
+			MustGetFlagInt(options.SINGLE_DATA_FILE_COPY_PREFETCH)), "")
+	}
+	if MustGetFlagInt(options.SINGLE_DATA_FILE_COPY_PREFETCH) > 4 {
+		gplog.Warn("Recommend a max value of 4 for --single-data-file-copy-prefetch")
 	}
 }
 

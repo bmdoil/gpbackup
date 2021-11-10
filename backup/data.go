@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/greenplum-db/gp-common-go-libs/dbconn"
 	"github.com/greenplum-db/gp-common-go-libs/gplog"
@@ -107,6 +108,191 @@ func BackupSingleTableData(table Table, rowsCopiedMap map[uint32]int64, counters
 	rowsCopiedMap[table.Oid] = rowsCopied
 	counters.ProgressBar.Increment()
 	return nil
+}
+
+const (
+	Unknown int = iota
+	Deferred
+	Complete
+)
+
+type safeOIDMap struct {
+	mutex  *sync.RWMutex
+	oidMap map[uint32]int
+}
+
+func (s *safeOIDMap) Init(tables []Table) {
+	s.mutex = &sync.RWMutex{}
+	s.oidMap = make(map[uint32]int, len(tables))
+	for _, table := range tables {
+		s.oidMap[table.Oid] = Unknown
+	}
+}
+func (s *safeOIDMap) SafeSet(key uint32, value int) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	s.oidMap[key] = value
+}
+
+func (s *safeOIDMap) SafeGet(key uint32) int {
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+	return s.oidMap[key]
+}
+
+func (s *safeOIDMap) List() map[uint32]int {
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+	return s.oidMap
+}
+
+func backupDataForAllTablesPrefetch(tables []Table) []map[uint32]int64 {
+	var numExtOrForeignTables int64
+	for _, table := range tables {
+		if table.SkipDataBackup() {
+			numExtOrForeignTables++
+		}
+	}
+	counters := BackupProgressCounters{NumRegTables: 0, TotalRegTables: int64(len(tables)) - numExtOrForeignTables}
+	counters.ProgressBar = utils.NewProgressBar(int(counters.TotalRegTables), "Tables backed up: ", utils.PB_INFO)
+	counters.ProgressBar.Start()
+	rowsCopiedMaps := make([]map[uint32]int64, connectionPool.NumConns)
+	/*
+	 * We break when an interrupt is received and rely on
+	 * TerminateHangingCopySessions to kill any COPY statements
+	 * in progress if they don't finish on their own.
+	 */
+	tasks := make(chan Table, len(tables))
+	// Record hashmap of oids to track which have been processed
+	var oidMap safeOIDMap
+	oidMap.Init(tables)
+	var workerPool sync.WaitGroup
+	var copyErr error
+	// Loading the tables as tasks. Start goroutines that work on the tasks
+	for _, table := range tables {
+		tasks <- table
+	}
+	// We incremented numConns by 1 to treat connNum 0 as a special worker
+	rowsCopiedMaps[0] = make(map[uint32]int64)
+	for connNum := 1; connNum < connectionPool.NumConns; connNum++ {
+		rowsCopiedMaps[connNum] = make(map[uint32]int64)
+		workerPool.Add(1)
+		go func(whichConn int) {
+			defer workerPool.Done()
+			for table := range tasks {
+				if wasTerminated || copyErr != nil {
+					counters.ProgressBar.(*pb.ProgressBar).NotPrint = true
+					return
+				}
+
+				if table.SkipDataBackup() {
+					gplog.Verbose("Skipping data backup of table %s because it is either an external or foreign table.", table.FQN())
+					oidMap.SafeSet(table.Oid, Complete)
+					continue
+				}
+				// If a random external SQL command had queued an AccessExclusiveLock acquisition request
+				// against this next table, the --job worker thread would deadlock on the COPY attempt.
+				// To prevent gpbackup from hanging, we attempt to acquire an AccessShareLock on the
+				// relation with the NOWAIT option before we run COPY. If the LOCK TABLE NOWAIT call
+				// fails, we catch the error and defer the table to the main worker thread, worker 0.
+				// Afterwards, we break early and terminate the worker since its transaction is now in an
+				// aborted state. We do not need to do this with the main worker thread because it has
+				// already acquired AccessShareLocks on all tables before the metadata dumping part.
+
+				err := LockTableNoWait(table, whichConn)
+				if err != nil {
+					// Postgres Error Code 55P03 translates to LOCK_NOT_AVAILABLE
+					if pgErr, ok := err.(*pgconn.PgError); ok && pgErr.Code != "55P03" {
+						copyErr = err
+						continue
+					}
+
+					if gplog.GetVerbosity() < gplog.LOGVERBOSE {
+						// Add a newline to interrupt the progress bar so that
+						// the following WARN message is nicely outputted.
+						fmt.Printf("\n")
+					}
+					gplog.Warn("Worker %d could not acquire AccessShareLock for table %s. Terminating worker and deferring table to main worker thread.",
+						whichConn, table.FQN())
+
+					oidMap.SafeSet(table.Oid, Deferred)
+
+					// Rollback transaction since it's in an aborted state
+					connectionPool.MustRollback(whichConn)
+
+					// Worker no longer has a valid distributed transaction snapshot
+					break
+				}
+
+				err = BackupSingleTableData(table, rowsCopiedMaps[whichConn], &counters, whichConn)
+				if err != nil {
+					copyErr = err
+				}
+				oidMap.SafeSet(table.Oid, Complete)
+
+			}
+		}(connNum)
+	}
+
+	// Special goroutine to handle deferred tables
+	// Handle all tables deferred by the deadlock detection. This can only be
+	// done with the main worker thread, worker 0, because it has
+	// AccessShareLocks on all the tables already.
+	deferredWorkerDone := make(chan bool)
+	go func() {
+		for _, table := range tables {
+			for {
+				switch oidMap.SafeGet(table.Oid) {
+				case Unknown:
+					time.Sleep(time.Millisecond * 50)
+				case Deferred:
+					err := BackupSingleTableData(table, rowsCopiedMaps[0], &counters, 0)
+					if err != nil {
+						copyErr = err
+					}
+					oidMap.SafeSet(table.Oid, Complete)
+				}
+
+				if oidMap.SafeGet(table.Oid) == Complete {
+					break
+				}
+			}
+		}
+		deferredWorkerDone <- true
+	}()
+
+	close(tasks)
+	workerPool.Wait()
+
+	allWorkersTerminatedLogged := false
+	for oid := range oidMap.List() {
+		if oidMap.SafeGet(oid) == Unknown {
+			if !allWorkersTerminatedLogged {
+				gplog.Warn("All prefetch workers terminated due to lock issues. Falling back to single main worker.")
+				allWorkersTerminatedLogged = true
+			}
+			oidMap.SafeSet(oid, Deferred) // All deferred tables are processed by worker 0
+		}
+	}
+	<-deferredWorkerDone
+
+	var agentErr error
+	if MustGetFlagBool(options.SINGLE_DATA_FILE) {
+		agentErr = utils.CheckAgentErrorsOnSegments(globalCluster, globalFPInfo)
+	}
+
+	if copyErr != nil && agentErr != nil {
+		gplog.Error(agentErr.Error())
+		gplog.Fatal(copyErr, "")
+	} else if copyErr != nil {
+		gplog.Fatal(copyErr, "")
+	} else if agentErr != nil {
+		gplog.Fatal(agentErr, "")
+	}
+
+	counters.ProgressBar.Finish()
+	printDataBackupWarnings(numExtOrForeignTables)
+	return rowsCopiedMaps
 }
 
 func backupDataForAllTables(tables []Table) []map[uint32]int64 {
