@@ -161,7 +161,7 @@ func BackupConfigurationValidation() {
 		SetRestorePlanForLegacyBackup(globalTOC, globalFPInfo.Timestamp, backupConfig)
 	}
 
-	ValidateBackupFlagCombinations()
+	ValidateBackupFlagCombinations(cmdFlags)
 
 	validateFilterListsInBackupSet()
 }

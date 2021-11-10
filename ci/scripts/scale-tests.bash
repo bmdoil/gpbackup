@@ -32,6 +32,39 @@ set -e
 
 ### Data scale tests ###
 log_file=/tmp/gpbackup.log
+
+echo "## Populating database for copy prefetch test ##"
+createdb copyprefetchdb
+for j in {1..20000}
+do
+  psql -d copyprefetchdb -q -c "CREATE TABLE tbl_1k_\$j(i int) DISTRIBUTED BY (i);"
+  psql -d copyprefetchdb -q -c "INSERT INTO tbl_1k_\$j SELECT generate_series(1,1000)"
+done
+
+echo "## Performing single-data-file, --no-compression, --jobs 1 backup ##"
+time gpbackup --dbname singledatafiledb --backup-dir /data/gpdata/ --single-data-file --no-compression --jobs 1 | tee "\$log_file"
+timestamp=\$(head -10 "\$log_file" | grep "Backup Timestamp " | grep -Eo "[[:digit:]]{14}")
+gpbackup_manager display-report \$timestamp
+
+echo "## Performing single-data-file, --no-compression, --jobs 4 backup ##"
+time gpbackup --dbname copyprefetchdb --backup-dir /data/gpdata/ --single-data-file --no-compression --jobs 4 | tee "\$log_file"
+timestamp=\$(head -10 "\$log_file" | grep "Backup Timestamp " | grep -Eo "[[:digit:]]{14}")
+gpbackup_manager display-report \$timestamp
+
+echo "## Performing single-data-file, --no-compression, --jobs 8 backup ##"
+time gpbackup --dbname singledatafiledb --backup-dir /data/gpdata/ --single-data-file --no-compression --jobs 8 | tee "\$log_file"
+timestamp=\$(head -10 "\$log_file" | grep "Backup Timestamp " | grep -Eo "[[:digit:]]{14}")
+gpbackup_manager display-report \$timestamp
+
+echo "## Performing single-data-file, --no-compression, --jobs 1 restore ##"
+time gprestore --timestamp "\$timestamp" --backup-dir /data/gpdata/ --create-db --redirect-db singlejobs1 --jobs 1
+
+echo "## Performing single-data-file, --no-compression, --jobs 4 restore ##"
+time gprestore --timestamp "\$timestamp" --backup-dir /data/gpdata/ --create-db --redirect-db singlejobs4 --jobs 4
+
+echo "## Performing single-data-file, --no-compression, --jobs 8 restore ##"
+time gprestore --timestamp "\$timestamp" --backup-dir /data/gpdata/ --create-db --redirect-db singlejobs8 --jobs 8
+
 echo "## Populating database for data scale test ##"
 createdb datascaledb
 for j in {1..5000}
