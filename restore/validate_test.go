@@ -397,4 +397,23 @@ var _ = Describe("restore/validate tests", func() {
 			Entry("--redirect-schema combos", "--redirect-schema schema1 --include-table schema.table2 --data-only", true),
 		)
 	})
+	Describe("ValidateBackupFlagCombinations", func() {
+		It("restore with copy-prefetch should fatal if backup was not taken with single-data-file", func() {
+			restore.SetBackupConfig(&history.BackupConfig{SingleDataFile: false})
+			testCmd := &cobra.Command{
+				Use:  "flag validation",
+				Args: cobra.NoArgs,
+				Run: func(cmd *cobra.Command, args []string) {
+					restore.ValidateBackupFlagCombinations(cmd.Flags())
+				}}
+			testCmd.SetArgs([]string{"--single-data-file-copy-prefetch", "4"})
+			restore.SetCmdFlags(testCmd.Flags())
+
+			defer testhelper.ShouldPanicWithMessage("CRITICAL")
+			err := testCmd.Execute()
+			if err == nil {
+				Fail("invalid flag combination passed validation check")
+			}
+		})
+	})
 })
