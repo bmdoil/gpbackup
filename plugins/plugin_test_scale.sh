@@ -142,7 +142,7 @@ if [[ "$plugin" == *gpbackup_s3_plugin ]]; then
 fi
 
 test_backup_and_restore_with_plugin "$plugin_config" "--single-data-file --no-compression" "$restore_filter"
-
+test_backup_and_restore_with_plugin "$plugin_config" "--single-data-file --single-data-file-copy-prefetch 4 --no-compression" "--single-data-file-copy-prefetch 4"
 if [[ "$plugin" == *gpbackup_ddboost_plugin ]]; then
   echo
   echo "DISABLED restore_subset"
