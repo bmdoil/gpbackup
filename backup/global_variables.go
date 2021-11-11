@@ -97,13 +97,6 @@ func SetQuotedRoleNames(quotedRoles map[string]string) {
 	quotedRoleNames = quotedRoles
 }
 
-func MinInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 // Util functions to enable ease of access to global flag values
 
 func GetConnNums() int {

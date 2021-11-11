@@ -92,13 +92,6 @@ func SetTOC(toc *toc.TOC) {
 	globalTOC = toc
 }
 
-func MinInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 // Util functions to enable ease of access to global flag values
 
 func GetConnNums() int {

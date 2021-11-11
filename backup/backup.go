@@ -512,7 +512,14 @@ func logCompletionMessage(msg string) {
 }
 
 func CreateInitialSegmentPipes(oidList []string, c *cluster.Cluster, fpInfo filepath.FilePathInfo) int {
-	maxPipes := MinInt(GetConnNums(), len(oidList))
+	// Create min(connections, tables) segment pipes on each host
+	maxPipes := func(numConns, numTables int) int {
+		if numConns < numTables {
+			return numConns
+		} else {
+			return numTables
+		}
+	}(GetConnNums(), len(oidList))
 	for i := 0; i < maxPipes; i++ {
 		utils.CreateSegmentPipeOnAllHosts(oidList[i], c, fpInfo)
 	}
