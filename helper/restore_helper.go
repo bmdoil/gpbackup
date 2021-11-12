@@ -97,7 +97,7 @@ func doRestoreAgent() error {
 	}
 	log(fmt.Sprintf("Using reader type: %s", reader.readerType))
 
-	preloadCreatedPipes(oidList, *copyPrefetch)
+	preloadCreatedPipes(oidList, *jobs)
 
 	var currentPipe string
 	for i, oid := range oidList {
@@ -106,9 +106,9 @@ func doRestoreAgent() error {
 		}
 
 		currentPipe = fmt.Sprintf("%s_%d", *pipeFile, oidList[i])
-		if i < len(oidList)-*copyPrefetch {
-			log(fmt.Sprintf("Creating pipe for oid %d\n", oidList[i+*copyPrefetch]))
-			nextPipeToCreate := fmt.Sprintf("%s_%d", *pipeFile, oidList[i+*copyPrefetch])
+		if i < len(oidList)-*jobs {
+			log(fmt.Sprintf("Creating pipe for oid %d\n", oidList[i+*jobs]))
+			nextPipeToCreate := fmt.Sprintf("%s_%d", *pipeFile, oidList[i+*jobs])
 			err := createPipe(nextPipeToCreate)
 			if err != nil {
 				// In the case this error is hit it means we have lost the

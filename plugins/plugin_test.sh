@@ -486,7 +486,7 @@ test_backup_and_restore_with_plugin() {
     echo "[PASSED] gpbackup and gprestore (using ${flags})"
 }
 
-test_backup_and_restore_with_plugin "--single-data-file --no-compression --single-data-file-copy-prefetch 4" "--single-data-file-copy-prefetch 4"
+test_backup_and_restore_with_plugin "--single-data-file --no-compression --jobs 4" "--jobs 4"
 test_backup_and_restore_with_plugin "--no-compression --single-data-file"
 test_backup_and_restore_with_plugin "--no-compression"
 test_backup_and_restore_with_plugin "--metadata-only"

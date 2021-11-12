@@ -363,11 +363,11 @@ var _ = Describe("End to End incremental tests", func() {
 				assertArtifactsCleaned(restoreConn, incremental1Timestamp)
 				assertArtifactsCleaned(restoreConn, incremental2Timestamp)
 			})
-			It("Restores from an incremental backup based on a from-timestamp incremental with --single-data-file-copy-prefetch", func() {
+			It("Restores from an incremental backup based on a from-timestamp incremental with --jobs", func() {
 				fullBackupTimestamp := gpbackup(gpbackupPath, backupHelperPath,
 					"--leaf-partition-data",
 					"--single-data-file",
-					"--single-data-file-copy-prefetch", "4",
+					"--jobs", "4",
 					"--plugin-config", pluginConfigPath)
 				forceMetadataFileDownloadFromPlugin(backupConn, fullBackupTimestamp)
 				testhelper.AssertQueryRuns(backupConn,
@@ -378,7 +378,7 @@ var _ = Describe("End to End incremental tests", func() {
 					"--incremental",
 					"--leaf-partition-data",
 					"--single-data-file",
-					"--single-data-file-copy-prefetch", "4",
+					"--jobs", "4",
 					"--from-timestamp", fullBackupTimestamp,
 					"--plugin-config", pluginConfigPath)
 				forceMetadataFileDownloadFromPlugin(backupConn, incremental1Timestamp)
@@ -391,13 +391,13 @@ var _ = Describe("End to End incremental tests", func() {
 					"--incremental",
 					"--leaf-partition-data",
 					"--single-data-file",
-					"--single-data-file-copy-prefetch", "4",
+					"--jobs", "4",
 					"--plugin-config", pluginConfigPath)
 				forceMetadataFileDownloadFromPlugin(backupConn, incremental2Timestamp)
 
 				gprestore(gprestorePath, restoreHelperPath, incremental2Timestamp,
 					"--redirect-db", "restoredb",
-					"--single-data-file-copy-prefetch", "4",
+					"--jobs", "4",
 					"--plugin-config", pluginConfigPath)
 
 				assertRelationsCreated(restoreConn, TOTAL_RELATIONS)

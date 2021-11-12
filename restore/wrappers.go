@@ -63,11 +63,7 @@ func SetLoggerVerbosity() {
 
 func CreateConnectionPool(unquotedDBName string) {
 	connectionPool = dbconn.NewDBConnFromEnvironment(unquotedDBName)
-	if FlagChanged(options.SINGLE_DATA_FILE_COPY_PREFETCH) {
-		connectionPool.MustConnect(MustGetFlagInt(options.SINGLE_DATA_FILE_COPY_PREFETCH))
-	} else {
-		connectionPool.MustConnect(MustGetFlagInt(options.JOBS))
-	}
+	connectionPool.MustConnect(MustGetFlagInt(options.JOBS))
 	utils.ValidateGPDBVersionCompatibility(connectionPool)
 }
 
@@ -161,7 +157,7 @@ func BackupConfigurationValidation() {
 		SetRestorePlanForLegacyBackup(globalTOC, globalFPInfo.Timestamp, backupConfig)
 	}
 
-	ValidateBackupFlagCombinations(cmdFlags)
+	ValidateBackupFlagCombinations()
 
 	validateFilterListsInBackupSet()
 }

@@ -94,14 +94,6 @@ func SetTOC(toc *toc.TOC) {
 
 // Util functions to enable ease of access to global flag values
 
-func GetConnNums() int {
-	return connectionPool.NumConns
-}
-
-func FlagChanged(flagName string) bool {
-	return cmdFlags.Changed(flagName)
-}
-
 func MustGetFlagString(flagName string) string {
 	return options.MustGetFlagString(cmdFlags, flagName)
 }

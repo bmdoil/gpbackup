@@ -18,7 +18,12 @@ import (
  * This file contains global variables and setter functions for those variables
  * used in testing.
  */
-
+const (
+ Unknown int = iota
+ Deferred
+ Complete
+ PG_LOCK_NOT_AVAILABLE = "55P03"
+)
 /*
  * Non-flag variables
  */
@@ -98,14 +103,6 @@ func SetQuotedRoleNames(quotedRoles map[string]string) {
 }
 
 // Util functions to enable ease of access to global flag values
-
-func GetConnNums() int {
-	return connectionPool.NumConns
-}
-
-func FlagChanged(flagName string) bool {
-	return cmdFlags.Changed(flagName)
-}
 
 func MustGetFlagString(flagName string) string {
 	return options.MustGetFlagString(cmdFlags, flagName)

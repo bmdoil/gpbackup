@@ -27,13 +27,13 @@ import (
  */
 
 var (
-	CleanupGroup    *sync.WaitGroup
-	errBuf          bytes.Buffer
-	version         string
-	wasTerminated   bool
-	writeHandle     *os.File
-	writer          *bufio.Writer
-	createdPipesMap map[string]bool
+	CleanupGroup  *sync.WaitGroup
+	errBuf        bytes.Buffer
+	version       string
+	wasTerminated bool
+	writeHandle   *os.File
+	writer        *bufio.Writer
+	pipesMap      map[string]bool
 )
 
 /*
@@ -53,7 +53,7 @@ var (
 	restoreAgent     *bool
 	tocFile          *string
 	isFiltered       *bool
-	copyPrefetch     *int
+	jobs             *int
 )
 
 func DoHelper() {
@@ -111,7 +111,7 @@ func InitializeGlobals() {
 	restoreAgent = flag.Bool("restore-agent", false, "Use gpbackup_helper as an agent for restore")
 	tocFile = flag.String("toc-file", "", "Absolute path to the table of contents file")
 	isFiltered = flag.Bool("with-filters", false, "Used with table/schema filters")
-	copyPrefetch = flag.Int("copy-prefetch", 1, "Used to know how many COPIES are being queued up")
+	jobs = flag.Int("jobs", 1, "Used to know how many COPIES are being queued up")
 
 	if *onErrorContinue && !*restoreAgent {
 		fmt.Printf("--on-error-continue flag can only be used with --restore-agent flag")
@@ -124,7 +124,7 @@ func InitializeGlobals() {
 	}
 	operating.InitializeSystemFunctions()
 
-	createdPipesMap = make(map[string]bool, 0)
+	pipesMap = make(map[string]bool, 0)
 }
 
 /*
@@ -137,7 +137,7 @@ func createPipe(pipe string) error {
 		return err
 	}
 
-	createdPipesMap[pipe] = true
+	pipesMap[pipe] = true
 	return nil
 }
 
@@ -147,15 +147,15 @@ func deletePipe(pipe string) error {
 		return err
 	}
 
-	delete(createdPipesMap, pipe)
+	delete(pipesMap, pipe)
 	return nil
 }
 
 // Gpbackup creates the first n pipes. Record these pipes.
-func preloadCreatedPipes(oidList []int, prefetchedPipeCount int) {
-	for i := 0; i < prefetchedPipeCount; i++ {
+func preloadCreatedPipes(oidList []int, jobsCount int) {
+	for i := 0; i < jobsCount; i++ {
 		pipeName := fmt.Sprintf("%s_%d", *pipeFile, oidList[i])
-		createdPipesMap[pipeName] = true
+		pipesMap[pipeName] = true
 	}
 }
 
@@ -212,7 +212,7 @@ func DoCleanup() {
 		log("Encountered error during cleanup: %v", err)
 	}
 
-	for pipeName, _ := range createdPipesMap {
+	for pipeName, _ := range pipesMap {
 		log("Removing pipe %s", pipeName)
 		err = deletePipe(pipeName)
 		if err != nil {
