@@ -224,10 +224,7 @@ END AS string;`, utils.EscapeSingleQuotes(unquotedDBName))
 	}
 }
 
-func ValidateBackupFlagCombinations(flags *pflag.FlagSet) {
-	if backupConfig.SingleDataFile && MustGetFlagInt(options.JOBS) != 1 {
-		gplog.Fatal(errors.Errorf("Cannot use jobs flag when restoring backups with a single data file per segment."), "")
-	}
+func ValidateBackupFlagCombinations() {
 	if (backupConfig.IncludeTableFiltered || backupConfig.DataOnly) && MustGetFlagBool(options.WITH_GLOBALS) {
 		gplog.Fatal(errors.Errorf("Global metadata is not backed up in table-filtered or data-only backups."), "")
 	}
@@ -236,9 +233,6 @@ func ValidateBackupFlagCombinations(flags *pflag.FlagSet) {
 	}
 	if backupConfig.DataOnly && MustGetFlagBool(options.METADATA_ONLY) {
 		gplog.Fatal(errors.Errorf("Cannot use metadata-only flag when restoring data-only backup"), "")
-	}
-	if !backupConfig.SingleDataFile && flags.Changed(options.SINGLE_DATA_FILE_COPY_PREFETCH) {
-		gplog.Fatal(errors.Errorf("The --single-data-file-copy-prefetch flag cannot be used when the backup was taken without --single-data-file"), "")
 	}
 	validateBackupFlagPluginCombinations()
 }

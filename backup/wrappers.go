@@ -37,18 +37,12 @@ func SetLoggerVerbosity() {
 	}
 }
 
+// Create JOBS + 1 database connections, minimum 2
+// Connection 0 will have ACCESS SHARE locks for all objects
+// If connection 1..N attempts to acquire a lock and fails, the transaction is rolled back and the worker is terminated
 func initializeConnectionPool(timestamp string) {
 	connectionPool = dbconn.NewDBConnFromEnvironment(MustGetFlagString(options.DBNAME))
-	var numConns int
-	switch true {
-	case FlagChanged(options.SINGLE_DATA_FILE_COPY_PREFETCH):
-		// Connection 0 is reserved for deferred worker, initialize 1 additional connection.
-		numConns = MustGetFlagInt(options.SINGLE_DATA_FILE_COPY_PREFETCH) + 1
-	case FlagChanged(options.JOBS):
-		numConns = MustGetFlagInt(options.JOBS)
-	default:
-		numConns = 1
-	}
+	numConns := MustGetFlagInt(options.JOBS) + 1
 	gplog.Verbose(fmt.Sprintf("Initializing %d worker connections", numConns))
 	connectionPool.MustConnect(numConns)
 

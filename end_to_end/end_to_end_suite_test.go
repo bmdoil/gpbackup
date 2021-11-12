@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+
 	"github.com/blang/semver"
 	"github.com/greenplum-db/gp-common-go-libs/cluster"
 	"github.com/greenplum-db/gp-common-go-libs/dbconn"
@@ -563,14 +564,14 @@ var _ = Describe("backup and restore end to end tests", func() {
 			Expect(stdout).To(ContainSubstring("Cleanup complete"))
 			Expect(stdout).To(Not(ContainSubstring("CRITICAL")))
 		})
-		It("runs gpbackup with copy-prefetch and sends a SIGINT to ensure cleanup functions successfully", func() {
+		It("runs gpbackup with single-data-file and jobs and sends a SIGINT to ensure cleanup functions successfully", func() {
 			if useOldBackupVersion {
 				Skip("This test is not needed for old backup versions")
 			}
 			args := []string{"--dbname", "testdb",
 				"--backup-dir", backupDir,
 				"--single-data-file",
-				"--single-data-file-copy-prefetch", "4",
+				"--jobs", "4",
 				"--verbose"}
 			cmd := exec.Command(gpbackupPath, args...)
 			go func() {
@@ -623,7 +624,7 @@ var _ = Describe("backup and restore end to end tests", func() {
 			Expect(stdout).To(Not(ContainSubstring("CRITICAL")))
 			assertArtifactsCleaned(restoreConn, timestamp)
 		})
-		It("runs gprestore with copy-prefetch and sends a SIGINT to ensure cleanup functions successfully", func() {
+		It("runs gprestore with single-data-file and jobs and sends a SIGINT to ensure cleanup functions successfully", func() {
 			if useOldBackupVersion {
 				Skip("This test is not needed for old backup versions")
 			}
@@ -635,7 +636,7 @@ var _ = Describe("backup and restore end to end tests", func() {
 				"--redirect-db", "restoredb",
 				"--backup-dir", backupDir,
 				"--verbose",
-				"--single-data-file-copy-prefetch", "4"}
+				"--jobs", "4"}
 			cmd := exec.Command(gprestorePath, args...)
 			go func() {
 				/*
@@ -1536,7 +1537,7 @@ var _ = Describe("backup and restore end to end tests", func() {
 
 		Expect(stdout).To(ContainSubstring("Backup completed successfully"))
 	})
-	It("runs gpbackup with singe-data-file-copy-prefetch flag and COPY deadlock handling occurs", func() {
+	It("runs gpbackup with single-data-file and jobs flag and COPY deadlock handling occurs", func() {
 		if useOldBackupVersion {
 			Skip("This test is not needed for old backup versions")
 		}
@@ -1544,12 +1545,12 @@ var _ = Describe("backup and restore end to end tests", func() {
 		// to grab AccessShareLocks before its metadata dump section.
 		backupConn.MustExec("BEGIN; LOCK TABLE public.foo IN ACCESS EXCLUSIVE MODE")
 
-		// Execute gpbackup with --single-data-file-copy-prefetch 9 since there are 9 tables to back up
+		// Execute gpbackup with --jobs 9 since there are 9 tables to back up
 		args := []string{
 			"--dbname", "testdb",
 			"--backup-dir", backupDir,
 			"--single-data-file",
-			"--single-data-file-copy-prefetch", "9",
+			"--jobs", "9",
 			"--verbose"}
 		cmd := exec.Command(gpbackupPath, args...)
 

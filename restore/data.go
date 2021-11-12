@@ -100,7 +100,7 @@ func restoreDataFromTimestamp(fpInfo filepath.FilePathInfo, dataEntries []toc.Ma
 			oidList[i] = fmt.Sprintf("%d", entry.Oid)
 		}
 		utils.WriteOidListToSegments(oidList, globalCluster, fpInfo)
-		initialPipes := CreateInitialSegmentPipes(oidList, globalCluster, fpInfo)
+		initialPipes := CreateInitialSegmentPipes(oidList, globalCluster, connectionPool, fpInfo)
 		if wasTerminated {
 			return 0
 		}
@@ -194,8 +194,14 @@ func restoreDataFromTimestamp(fpInfo filepath.FilePathInfo, dataEntries []toc.Ma
 	return numErrors
 }
 
-func CreateInitialSegmentPipes(oidList []string, c *cluster.Cluster, fpInfo filepath.FilePathInfo) int {
-	maxPipes := MinInt(GetConnNums(), len(oidList))
+func CreateInitialSegmentPipes(oidList []string, c *cluster.Cluster, connectionPool *dbconn.DBConn, fpInfo filepath.FilePathInfo) int {
+	// Create min(connections, tables) segment pipes on each host
+	var maxPipes int
+	if connectionPool.NumConns < len(oidList) {
+		maxPipes = connectionPool.NumConns
+	} else {
+		maxPipes = len(oidList)
+	}
 	for i := 0; i < maxPipes; i++ {
 		utils.CreateSegmentPipeOnAllHosts(oidList[i], c, fpInfo)
 	}

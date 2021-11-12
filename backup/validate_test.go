@@ -7,7 +7,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/greenplum-db/gp-common-go-libs/testhelper"
 	"github.com/greenplum-db/gpbackup/backup"
-	"github.com/greenplum-db/gpbackup/options"
+	"github.com/greenplum-db/gpbackup/options"	
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
@@ -266,7 +266,7 @@ var _ = Describe("backup/validate tests", func() {
 			 * Below are various different jobs combinations
 			 */
 			Entry("jobs combos", "--jobs 2 --metadata-only", false),
-			Entry("jobs combos", "--jobs 2 --single-data-file", false),
+			Entry("jobs combos", "--jobs 2 --single-data-file", true),
 			Entry("jobs combos", "--jobs 2 --plugin-config /tmp/file", true),
 			Entry("jobs combos", "--jobs 2 --data-only", true),
 		)

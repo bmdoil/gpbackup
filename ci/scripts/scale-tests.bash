@@ -33,12 +33,12 @@ set -e
 ### Data scale tests ###
 log_file=/tmp/gpbackup.log
 
-echo "## Populating database for copy prefetch test ##"
-createdb copyprefetchdb
+echo "## Populating database for --single-data-file --jobs 4 test ##"
+createdb singledatafiledb
 for j in {1..20000}
 do
-  psql -d copyprefetchdb -q -c "CREATE TABLE tbl_1k_\$j(i int) DISTRIBUTED BY (i);"
-  psql -d copyprefetchdb -q -c "INSERT INTO tbl_1k_\$j SELECT generate_series(1,1000)"
+  psql -d singledatafiledb -q -c "CREATE TABLE tbl_1k_\$j(i int) DISTRIBUTED BY (i);"
+  psql -d singledatafiledb -q -c "INSERT INTO tbl_1k_\$j SELECT generate_series(1,1000)"
 done
 
 echo "## Performing single-data-file, --no-compression, --jobs 1 backup ##"

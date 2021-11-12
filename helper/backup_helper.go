@@ -31,7 +31,7 @@ func doBackupAgent() error {
 		return err
 	}
 
-	preloadCreatedPipes(oidList, *copyPrefetch)
+	preloadCreatedPipes(oidList, *jobs)
 
 	var currentPipe string
 	/*
@@ -44,9 +44,9 @@ func doBackupAgent() error {
 		if wasTerminated {
 			return errors.New("Terminated due to user request")
 		}
-		if i < len(oidList)-*copyPrefetch {
-			log(fmt.Sprintf("Creating pipe for oid %d\n", oidList[i+*copyPrefetch]))
-			nextPipeToCreate := fmt.Sprintf("%s_%d", *pipeFile, oidList[i+*copyPrefetch])
+		if i < len(oidList)-*jobs {
+			log(fmt.Sprintf("Creating pipe for oid %d\n", oidList[i+*jobs]))
+			nextPipeToCreate := fmt.Sprintf("%s_%d", *pipeFile, oidList[i+*jobs])
 			err := createPipe(nextPipeToCreate)
 			if err != nil {
 				return err
